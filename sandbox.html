@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <div id="root"></div>
+</body>
+<!-- This setup is not suitable for production. -->
+<!-- Only use it in development! -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script async src="https://ga.jspm.io/npm:es-module-shims@1.7.0/dist/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react?dev",
+    "react-dom/client": "https://esm.sh/react-dom/client?dev"
+  }
+}
+</script>
+<script type="text/babel" data-type="module">
+import React, { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+
+import { useState, useEffect, useRef } from "react";
+
+// ─── PALETTE ───────────────────────────────────────────────
+const C = {
+  bg: "#080f07", surface: "#0f1a0d", card: "#162014", border: "#243520",
+  accent: "#6dba50", accent2: "#f0c040", danger: "#e05a45", warn: "#e8912e",
+  info: "#4ab5d4", muted: "#6a8f62", text: "#ddecd8", dim: "#a8c4a2",
+};
+
+// ─── GLOBAL STYLES ─────────────────────────────────────────
+const GS = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@300;400;600;800&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: ${C.bg}; color: ${C.text}; font-family: 'Space Grotesk', sans-serif; min-height: 100vh; }
+  input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type=number] { -moz-appearance: textfield; }
+  select option { background: ${C.card}; }
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: ${C.surface}; } ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+`;
+
+// ─── REUSABLE COMPONENTS ───────────────────────────────────
+const inp = {
+  base: { width: "100%", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+    padding: "11px 14px", color: C.text, fontFamily: "Space Grotesk", fontSize: 14, outline: "none" },
+};
+const Input = ({ label, ...p }) => (
+  <div style={{ marginBottom: 12 }}>
+    {label && <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600, textTransform: "uppercase", letterSpacing: .5 }}>{label}</div>}
+    <input style={inp.base} {...p} />
+  </div>
+);
+const Select = ({ label, children, ...p }) => (
+  <div style={{ marginBottom: 12 }}>
+    {label && <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600, textTransform: "uppercase", letterSpacing: .5 }}>{label}</div>}
+    <select style={{ ...inp.base, WebkitAppearance: "none" }} {...p}>{children}</select>
+  </div>
+);
+const Textarea = ({ label, ...p }) => (
+  <div style={{ marginBottom: 12 }}>
+    {label && <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600, textTransform: "uppercase", letterSpacing: .5 }}>{label}</div>}
+    <textarea style={{ ...inp.base, resize: "none", lineHeight: 1.6 }} {...p} />
+  </div>
+);
+const Stepper = ({ label, value, onChange, step = 1, min = 0, unit = "" }) => (
+  <div style={{ marginBottom: 12 }}>
+    {label && <div style={{ fontSize: 12, color: C.muted, marginBottom: 5, fontWeight: 600, textTransform: "uppercase", letterSpacing: .5 }}>{label}{unit && <span style={{ color: C.accent, marginLeft: 4 }}>({unit})</span>}</div>}
+    <div style={{ display: "flex", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+      <button onClick={() => onChange(Math.max(min, (parseFloat(value) || 0) - step))}
+        style={{ background: C.card, border: "none", color: C.text, width: 44, fontSize: 20, cursor: "pointer", flexShrink: 0, fontFamily: "Space Grotesk" }}>−</button>
+      <input type="number" value={value} onChange={e => onChange(parseFloat(e.target.value) || 0)}
+        style={{ flex: 1, background: "transparent", border: "none", textAlign: "center", color: C.text, fontFamily: "Outfit", fontSize: 17, fontWeight: 700, outline: "none" }} />
+      <button onClick={() => onChange((parseFloat(value) || 0) + step)}
+        style={{ background: C.card, border: "none", color: C.text, width: 44, fontSize: 20, cursor: "pointer", flexShrink: 0, fontFamily: "Space Grotesk" }}>+</button>
+    </div>
+  </div>
+);
+const Card = ({ children, accent, style = {} }) => (
+  <div style={{ background: C.card, border: `1px solid ${accent || C.border}`, borderRadius: 14, padding: 16, marginBottom: 14, ...style }}>{children}</div>
+);
+const CardTitle = ({ icon, num, children }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+    {num && <div style={{ background: C.border, color: C.accent, width: 22, height: 22, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{num}</div>}
+    {icon && <span style={{ fontSize: 16 }}>{icon}</span>}
+    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: C.muted, fontWeight: 700 }}>{children}</div>
+  </div>
+);
+const Row2 = ({ children }) => <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{children}</div>;
+const Btn = ({ children, onClick, color = C.accent, disabled, style = {} }) => (
+  <button onClick={onClick} disabled={disabled} style={{
+    width: "100%", padding: "14px 0", border: "none", borderRadius: 12, background: disabled ? C.border : color,
+    color: disabled ? C.muted : (color === C.accent ? C.bg : "#fff"),
+    fontFamily: "Outfit", fontSize: 15, fontWeight: 800, cursor: disabled ? "default" : "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 8, letterSpacing: .3, ...style
+  }}>{children}</button>
+);
+const Tag = ({ children, color = C.accent }) => (
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: color + "22", border: `1px solid ${color}55`, borderRadius: 6, padding: "3px 9px", fontSize: 11, color, margin: 2 }}>{children}</span>
+);
+
+// ─── MODULE SELECTOR ───────────────────────────────────────
+const MODULES = [
+  { id: "oeufs", icon: "🥚", label: "Oeufs de Table", color: C.accent2, desc: "Poules pondeuses" },
+  { id: "poulet", icon: "🍗", label: "Viande Poulet", color: C.warn, desc: "Poulets de chair" },
+  { id: "mais", icon: "🌽", label: "Mais", color: C.accent, desc: "Production vegetale" },
+  { id: "soja", icon: "🫘", label: "Soja", color: C.info, desc: "Production vegetale" },
+];
+
+// ─── PHASE MAÏS/SOJA ───────────────────────────────────────
+const PHASES_VEG = ["Preparation sol", "Semis", "Croissance/Entretien", "Floraison", "Recolte", "Post-recolte/Stockage"];
+const UNITES_VEG = ["ha", "ares", "parcelles"];
+const UNITES_POIDS = ["kg", "sacs 50kg", "sacs 100kg", "tonnes"];
+
+// ─── MAIN APP ──────────────────────────────────────────────
+let App = function AdilFarmsPro() {
+  const [screen, setScreen] = useState("home"); // home | form | history | success
+  const [activeModule, setActiveModule] = useState(null);
+  const [records, setRecords] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("adilRecords") || "[]"); } catch { return []; }
+  });
+  const [form, setForm] = useState({});
+  const [photos, setPhotos] = useState([]);
+  const [aiResult, setAiResult] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [filterModule, setFilterModule] = useState("all");
+  const fileRef = useRef();
+
+  const today = new Date().toISOString().split("T")[0];
+
+  useEffect(() => {
+    try { localStorage.setItem("adilRecords", JSON.stringify(records)); } catch {}
+  }, [records]);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const g = (k, def = "") => form[k] !== undefined ? form[k] : def;
+
+  function showToast(msg, err = false) {
+    setToast({ msg, err });
+    setTimeout(() => setToast(null), 3200);
+  }
+
+  function startForm(mod) {
+    setActiveModule(mod);
+    setForm({ date: today, module: mod.id });
+    setPhotos([]);
+    setAiResult(null);
+    setScreen("form");
+  }
+
+  function handlePhotos(e) {
+    const files = Array.from(e.target.files);
+    const next = [...photos];
+    files.forEach(f => { if (next.length < 5) next.push({ file: f, url: URL.createObjectURL(f) }); });
+    setPhotos(next);
+  }
+
+  async function runAI() {
+    setAnalyzing(true);
+    setAiResult(null);
+    const isAnimal = ["oeufs", "poulet"].includes(activeModule.id);
+    let prompt = "";
+    if (isAnimal) {
+      const tp = g("tpBatiment", 0);
+      const deces = g("deces", 0);
+      const aspects = g("aspectsFientes", []);
+      const odeur = g("odeurFientes", "normale");
+      const pct = g("pctFientesAnorm", 0);
+      const tempMax = g("tempMax", 0);
+      const humMax = g("humMax", 0);
+      prompt = "Tu es un expert veterinaire avicole en Afrique de l Ouest. Donnees du jour: Taux de ponte ou survie: " + tp + "%. Deces: " + deces + ". Fientes aspects: " + (aspects.length ? aspects.join(", ") : "non precise") + ". Fientes proportion anormale: " + pct + "%. Odeur: " + odeur + ". Temp max: " + tempMax + "C. Humidite max: " + humMax + "%. Donne en JSON strict sans markdown: {\"alerte\":\"NORMAL|VIGILANCE|URGENT\",\"diagnostic\":\"court\",\"cause\":\"courte\",\"actions\":[{\"prio\":\"ROUGE|ORANGE|VERT\",\"texte\":\"action concrete\"}]}";
+    } else {
+      const phase = g("phaseVeg", "");
+      const culture = activeModule.id;
+      const surf = g("superficie", 0);
+      const pluvio = g("pluviometrie", "");
+      const problemes = g("problemesVeg", "");
+      prompt = "Tu es un agronome expert en culture de " + culture + " en Afrique de l Ouest. Phase actuelle: " + phase + ". Superficie: " + surf + " ha. Pluviometrie observee: " + pluvio + ". Problemes signales: " + (problemes || "aucun") + ". Donne en JSON strict sans markdown: {\"alerte\":\"NORMAL|VIGILANCE|URGENT\",\"diagnostic\":\"court\",\"cause\":\"courte\",\"actions\":[{\"prio\":\"ROUGE|ORANGE|VERT\",\"texte\":\"action concrete\"}]}";
+    }
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 800, messages: [{ role: "user", content: prompt }] })
+      });
+      const data = await res.json();
+      const raw = data.content.map(b => b.text || "").join("").replace(/```json|```/g, "").trim();
+      setAiResult(JSON.parse(raw));
+    } catch { showToast("Erreur analyse IA", true); }
+    setAnalyzing(false);
+  }
+
+  function submitForm() {
+    if (!g("agent")) { showToast("Nom de l agent requis"); return; }
+    if (!g("site")) { showToast("Nom du site requis"); return; }
+    const record = { ...form, photos: photos.length, aiResult, id: Date.now(), submittedAt: new Date().toISOString() };
+    setRecords(prev => [record, ...prev]);
+    setScreen("success");
+  }
+
+  function exportCSV() {
+    if (!records.length) { showToast("Aucune donnee a exporter"); return; }
+    const filtered = filterModule === "all" ? records : records.filter(r => r.module === filterModule);
+    const headers = ["Date", "Module", "Site", "Agent", "Batiment", "EffectifDebut", "EffectifActuel", "TauxSurvie%", "AlimServi_kg", "Eau_L", "OeufsTotaux", "PlateauxVendus", "PrixPlateau_FCFA", "OeufsVendus", "PrixOeuf_FCFA", "PouletVendus_kg", "PrixKg_FCFA", "PouletEntierNb", "PrixPouletEntier_FCFA", "CoutAliment_FCFA", "CoutVeto_FCFA", "CoutPoussins_FCFA", "CoutMainOeuvre_FCFA", "AutresCharges_FCFA", "TotalCharges_FCFA", "TotalRecettes_FCFA", "MargeJournaliere_FCFA", "Deces", "OeufsMolles", "OeufsCasses", "TempMin", "TempMax", "HumMin", "HumMax", "AlimStock_kg", "Superficie_ha", "PhaseVeg", "SemencesKg", "CoutSemences_FCFA", "EngraisKg", "CoutEngrais_FCFA", "PesticidesQte", "CoutPesticides_FCFA", "MainOeuvrePers", "CoutMOVeg_FCFA", "RecolteQte", "UniteRecolte", "StockageQte", "QteVendueVeg", "PrixVenteVeg_FCFA", "RecettesVeg_FCFA", "AlerteIA", "DiagnosticIA", "Photos"];
+    const rows = filtered.map(r => {
+      const totalCharges = (parseFloat(r.coutAliment) || 0) + (parseFloat(r.coutVeto) || 0) + (parseFloat(r.coutPoussins) || 0) + (parseFloat(r.coutMO) || 0) + (parseFloat(r.autresCharges) || 0) + (parseFloat(r.coutSemences) || 0) + (parseFloat(r.coutEngrais) || 0) + (parseFloat(r.coutPesticides) || 0) + (parseFloat(r.coutMOVeg) || 0);
+      const totalRecettesAnimal = (parseFloat(r.plateauxVendus) || 0) * (parseFloat(r.prixPlateau) || 0) + (parseFloat(r.oeufsVendusUnite) || 0) * (parseFloat(r.prixOeuf) || 0) + (parseFloat(r.pouletKgVendu) || 0) * (parseFloat(r.prixKgPoulet) || 0) + (parseFloat(r.pouletEntierNb) || 0) * (parseFloat(r.prixPouletEntier) || 0);
+      const recettesVeg = (parseFloat(r.qteVendueVeg) || 0) * (parseFloat(r.prixVenteVeg) || 0);
+      const totalRecettes = totalRecettesAnimal + recettesVeg;
+      const tpBat = r.tpBatiment || "";
+      const effectifActuel = r.effectifDebut && r.deces ? (parseInt(r.effectifDebut) - parseInt(r.decesCumules || 0)) : "";
+      const tauxSurvie = r.effectifDebut && effectifActuel ? Math.round((effectifActuel / r.effectifDebut) * 100) : "";
+      return [r.date, r.module, r.site, r.agent, r.batiment || "", r.effectifDebut || "", effectifActuel, tauxSurvie, r.alimServi || "", r.eauConso || "", r.oeufsTotaux || "", r.plateauxVendus || "", r.prixPlateau || "", r.oeufsVendusUnite || "", r.prixOeuf || "", r.pouletKgVendu || "", r.prixKgPoulet || "", r.pouletEntierNb || "", r.prixPouletEntier || "", r.coutAliment || "", r.coutVeto || "", r.coutPoussins || "", r.coutMO || "", r.autresCharges || "", totalCharges, totalRecettes, (totalRecettes - totalCharges), r.deces || "", r.oeufsM || "", r.oeufsCasses || "", r.tempMin || "", r.tempMax || "", r.humMin || "", r.humMax || "", r.alimStock || "", r.superficie || "", r.phaseVeg || "", r.semencesKg || "", r.coutSemences || "", r.engraisKg || "", r.coutEngrais || "", r.pesticidesQte || "", r.coutPesticides || "", r.mainOeuvrePers || "", r.coutMOVeg || "", r.recolteQte || "", r.uniteRecolte || "", r.stockageQte || "", r.qteVendueVeg || "", r.prixVenteVeg || "", recettesVeg, r.aiResult?.alerte || "", r.aiResult?.diagnostic || "", r.photos || 0].map(v => String(v).replace(/,/g, ";"));
+    });
+    const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "ADIL_FARMS_historique_" + new Date().toISOString().split("T")[0] + ".csv";
+    a.click();
+    showToast("Export CSV OK");
+  }
+
+  // ─── SCREENS ─────────────────────────────────────────────
+
+  if (screen === "success") return (
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center" }}>
+      <style>{GS}</style>
+      <div style={{ fontSize: 72, marginBottom: 16, animation: "fadeUp .4s ease" }}>✅</div>
+      <div style={{ fontFamily: "Outfit", fontSize: 24, fontWeight: 800, marginBottom: 8, animation: "fadeUp .4s .1s ease both" }}>Collecte enregistree !</div>
+      <div style={{ color: C.muted, fontSize: 13, marginBottom: 8, animation: "fadeUp .4s .15s ease both" }}>Site: <strong style={{ color: C.text }}>{g("site")}</strong> · {g("date")}</div>
+      {aiResult && (
+        <div style={{ background: C.card, border: `1px solid ${aiResult.alerte === "URGENT" ? C.danger : aiResult.alerte === "VIGILANCE" ? C.warn : C.accent}`, borderRadius: 12, padding: 14, marginBottom: 20, maxWidth: 340, width: "100%", animation: "fadeUp .4s .2s ease both" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 6, textTransform: "uppercase" }}>Diagnostic IA</div>
+          <div style={{ fontSize: 13, color: aiResult.alerte === "URGENT" ? C.danger : aiResult.alerte === "VIGILANCE" ? C.warn : C.accent, fontWeight: 700, marginBottom: 4 }}>{aiResult.alerte}</div>
+          <div style={{ fontSize: 12, color: C.dim }}>{aiResult.diagnostic}</div>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 340, animation: "fadeUp .4s .25s ease both" }}>
+        <Btn onClick={() => startForm(activeModule)} color={C.card} style={{ border: `1px solid ${C.border}`, color: C.text }}>+ Nouveau</Btn>
+        <Btn onClick={() => setScreen("home")}>Accueil</Btn>
+      </div>
+    </div>
+  );
+
+  if (screen === "history") return (
+    <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 80 }}>
+      <style>{GS}</style>
+      <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "16px 16px 12px", position: "sticky", top: 0, zIndex: 50 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <button onClick={() => setScreen("home")} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, width: 36, height: 36, borderRadius: 10, cursor: "pointer", fontSize: 16 }}>←</button>
+          <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 17 }}>📊 Historique ADIL FARMS</div>
+        </div>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
+          {[{ id: "all", label: "Tout" }, ...MODULES].map(m => (
+            <button key={m.id} onClick={() => setFilterModule(m.id)}
+              style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 20, border: `1px solid ${filterModule === m.id ? C.accent : C.border}`, background: filterModule === m.id ? C.accent + "22" : C.card, color: filterModule === m.id ? C.accent : C.muted, fontSize: 12, cursor: "pointer", fontFamily: "Space Grotesk", fontWeight: 600 }}>
+              {m.icon || "📋"} {m.label || m.id}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: 16 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+          <Btn onClick={exportCSV} color={C.info} style={{ flex: 1, padding: "11px 0" }}>📥 Export CSV</Btn>
+          <div style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: C.muted, fontWeight: 600 }}>
+            {(filterModule === "all" ? records : records.filter(r => r.module === filterModule)).length} fiches
+          </div>
+        </div>
+        {records.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 60, color: C.muted }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+            <div>Aucune collecte enregistree</div>
+          </div>
+        ) : (
+          (filterModule === "all" ? records : records.filter(r => r.module === filterModule)).map(r => {
+            const mod = MODULES.find(m => m.id === r.module);
+            const totalCharges = (parseFloat(r.coutAliment) || 0) + (parseFloat(r.coutVeto) || 0) + (parseFloat(r.coutPoussins) || 0) + (parseFloat(r.coutMO) || 0) + (parseFloat(r.autresCharges) || 0) + (parseFloat(r.coutSemences) || 0) + (parseFloat(r.coutEngrais) || 0) + (parseFloat(r.coutPesticides) || 0) + (parseFloat(r.coutMOVeg) || 0);
+            const totalRecettesAnimal = (parseFloat(r.plateauxVendus) || 0) * (parseFloat(r.prixPlateau) || 0) + (parseFloat(r.oeufsVendusUnite) || 0) * (parseFloat(r.prixOeuf) || 0) + (parseFloat(r.pouletKgVendu) || 0) * (parseFloat(r.prixKgPoulet) || 0) + (parseFloat(r.pouletEntierNb) || 0) * (parseFloat(r.prixPouletEntier) || 0);
+            const recettesVeg = (parseFloat(r.qteVendueVeg) || 0) * (parseFloat(r.prixVenteVeg) || 0);
+            const totalRecettes = totalRecettesAnimal + recettesVeg;
+            const marge = totalRecettes - totalCharges;
+            return (
+              <div key={r.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 20 }}>{mod?.icon || "📋"}</span>
+                  <div>
+                    <div style={{ fontFamily: "Outfit", fontWeight: 700, fontSize: 14 }}>{r.site || "—"} · {r.batiment ? "Bat " + r.batiment : ""}</div>
+                    <div style={{ fontSize: 11, color: C.muted }}>{r.date} · {r.agent}</div>
+                  </div>
+                  {r.aiResult && <div style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: r.aiResult.alerte === "URGENT" ? C.danger : r.aiResult.alerte === "VIGILANCE" ? C.warn : C.accent, background: (r.aiResult.alerte === "URGENT" ? C.danger : r.aiResult.alerte === "VIGILANCE" ? C.warn : C.accent) + "22", padding: "3px 8px", borderRadius: 6 }}>{r.aiResult.alerte}</div>}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  {totalCharges > 0 && <div style={{ background: C.surface, borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: C.muted }}>Charges</div>
+                    <div style={{ fontFamily: "Outfit", fontWeight: 700, fontSize: 13, color: C.danger }}>{totalCharges.toLocaleString()}</div>
+                    <div style={{ fontSize: 9, color: C.muted }}>FCFA</div>
+                  </div>}
+                  {totalRecettes > 0 && <div style={{ background: C.surface, borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: C.muted }}>Recettes</div>
+                    <div style={{ fontFamily: "Outfit", fontWeight: 700, fontSize: 13, color: C.accent }}>{totalRecettes.toLocaleString()}</div>
+                    <div style={{ fontSize: 9, color: C.muted }}>FCFA</div>
+                  </div>}
+                  {(totalCharges > 0 || totalRecettes > 0) && <div style={{ background: C.surface, borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: C.muted }}>Marge</div>
+                    <div style={{ fontFamily: "Outfit", fontWeight: 700, fontSize: 13, color: marge >= 0 ? C.accent : C.danger }}>{marge >= 0 ? "+" : ""}{marge.toLocaleString()}</div>
+                    <div style={{ fontSize: 9, color: C.muted }}>FCFA</div>
+                  </div>}
+                </div>
+                {(r.tpBatiment || r.phaseVeg) && (
+                  <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {r.tpBatiment && <Tag color={C.accent2}>TP {r.tpBatiment}%</Tag>}
+                    {r.deces > 0 && <Tag color={C.danger}>Deces: {r.deces}</Tag>}
+                    {r.phaseVeg && <Tag color={C.info}>{r.phaseVeg}</Tag>}
+                    {r.recolteQte && <Tag color={C.accent}>Recolte: {r.recolteQte} {r.uniteRecolte}</Tag>}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+
+  if (screen === "form") {
+    const isAnimal = ["oeufs", "poulet"].includes(activeModule.id);
+    const isVeg = ["mais", "soja"].includes(activeModule.id);
+
+    return (
+      <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 90 }}>
+        <style>{GS}</style>
+        {/* HEADER */}
+        <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "14px 16px 10px", position: "sticky", top: 0, zIndex: 50 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={() => setScreen("home")} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, width: 36, height: 36, borderRadius: 10, cursor: "pointer", fontSize: 16 }}>←</button>
+            <div style={{ fontSize: 22 }}>{activeModule.icon}</div>
+            <div>
+              <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 16 }}>{activeModule.label}</div>
+              <div style={{ fontSize: 11, color: C.muted }}>Collecte journaliere · {g("date", today)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: "16px 16px 0" }}>
+
+          {/* ── INFOS GENERALES ── */}
+          <Card>
+            <CardTitle icon="📋" num="A">Identification</CardTitle>
+            <Row2>
+              <Input label="Date" type="date" value={g("date", today)} onChange={e => set("date", e.target.value)} />
+              <Select label="Site / Ferme" value={g("site")} onChange={e => set("site", e.target.value)}>
+                <option value="">-- Choisir --</option>
+                <option>Ferme Ze</option>
+                <option>Ferme Cotonou</option>
+                <option>Ferme Parakou</option>
+                <option>Autre</option>
+              </Select>
+            </Row2>
+            <Input label="Agent responsable" type="text" value={g("agent")} onChange={e => set("agent", e.target.value)} placeholder="Nom complet" />
+            {isAnimal && (
+              <Row2>
+                <Select label="Batiment" value={g("batiment")} onChange={e => set("batiment", e.target.value)}>
+                  {["1","2","3","4","5"].map(n => <option key={n} value={n}>Batiment {n}</option>)}
+                </Select>
+                <Input label="Heure extinction" type="time" value={g("heureLumiere", "22:00")} onChange={e => set("heureLumiere", e.target.value)} />
+              </Row2>
+            )}
+          </Card>
+
+          {/* ── EFFECTIF CHEPTEL (Animal uniquement) ── */}
+          {isAnimal && (
+            <Card accent={C.accent2}>
+              <CardTitle icon="🐓" num="B">Effectif du Cheptel</CardTitle>
+              <Row2>
+                <Stepper label="Effectif debut bande" unit="tetes" value={g("effectifDebut", 0)} onChange={v => set("effectifDebut", v)} step={10} />
+                <Stepper label="Deces cumules bande" unit="tetes" value={g("decesCumules", 0)} onChange={v => set("decesCumules", v)} />
+              </Row2>
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>Effectif actuel estime</div>
+                  <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 24, color: C.accent2 }}>
+                    {Math.max(0, (parseInt(g("effectifDebut", 0)) - parseInt(g("decesCumules", 0))))} tetes
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>Taux de survie</div>
+                  <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 24, color: g("effectifDebut", 0) > 0 ? C.accent : C.muted }}>
+                    {g("effectifDebut", 0) > 0 ? Math.round(((parseInt(g("effectifDebut", 0)) - parseInt(g("decesCumules", 0))) / parseInt(g("effectifDebut", 0))) * 100) : 0}%
+                  </div>
+                </div>
+              </div>
+              <Stepper label="Deces du jour" unit="tetes" value={g("deces", 0)} onChange={v => set("deces", v)} />
+              <Input label="Race / Souche" type="text" value={g("race")} onChange={e => set("race", e.target.value)} placeholder="Ex: Isa Brown, Ross 308..." />
+              <Row2>
+                <Input label="Age du lot (semaines)" type="number" value={g("ageLot")} onChange={e => set("ageLot", e.target.value)} placeholder="0" />
+                <Input label="Nb bandes actives" type="number" value={g("nbBandes", 1)} onChange={e => set("nbBandes", e.target.value)} placeholder="1" />
+              </Row2>
+            </Card>
+          )}
+
+          {/* ── ALIMENTATION & SANTE (Animal) ── */}
+          {isAnimal && (
+            <Card>
+              <CardTitle icon="🌾" num="C">Alimentation et Sante</CardTitle>
+              <Row2>
+                <Stepper label="Aliment servi" unit="kg" value={g("alimServi", 0)} onChange={v => set("alimServi", v)} step={5} />
+                <Stepper label="Stock restant" unit="kg" value={g("alimStock", 0)} onChange={v => set("alimStock", v)} step={5} />
+              </Row2>
+              <Stepper label="Eau consommee" unit="litres" value={g("eauConso", 0)} onChange={v => set("eauConso", v)} step={10} />
+              <Input label="Type aliment" type="text" value={g("typeAliment")} onChange={e => set("typeAliment", e.target.value)} placeholder="Ex: Ponte, Demarrage, Finition..." />
+              <Input label="Produits veterinaires utilises" type="text" value={g("produitsVeto")} onChange={e => set("produitsVeto", e.target.value)} placeholder="Ex: Electro Power, Vitamines, Vaccin..." />
+              <Input label="Operation speciale" type="text" value={g("opSpec")} onChange={e => set("opSpec", e.target.value)} placeholder="Vaccination, deworming, controle..." />
+            </Card>
+          )}
+
+          {/* ── PRODUCTION ŒUFS ── */}
+          {activeModule.id === "oeufs" && (
+            <Card accent={C.accent2}>
+              <CardTitle icon="🥚" num="D">Production d Oeufs</CardTitle>
+              {[1,2,3,4].map(i => (
+                <div key={i} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, color: C.accent2, fontWeight: 700, marginBottom: 8, textTransform: "uppercase", letterSpacing: .5 }}>Rangee {i}</div>
+                  <Row2>
+                    <Stepper label="Plateaux" value={g("r"+i+"_p", 0)} onChange={v => { set("r"+i+"_p", v); }} />
+                    <Stepper label="Oeufs loose" value={g("r"+i+"_o", 0)} onChange={v => { set("r"+i+"_o", v); }} />
+                  </Row2>
+                  <div style={{ fontSize: 12, color: C.muted, textAlign: "right" }}>
+                    Total: <strong style={{ color: C.accent2 }}>{(parseInt(g("r"+i+"_p",0))*30 + parseInt(g("r"+i+"_o",0)))} oeufs</strong>
+                  </div>
+                </div>
+              ))}
+              <div style={{ background: `${C.accent2}15`, border: `1px solid ${C.accent2}55`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>Total oeufs collectes</div>
+                <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 28, color: C.accent2 }}>
+                  {[1,2,3,4].reduce((acc, i) => acc + parseInt(g("r"+i+"_p",0))*30 + parseInt(g("r"+i+"_o",0)), 0)} oeufs
+                </div>
+                {g("effectifDebut", 0) > 0 && (
+                  <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                    TP Batiment: <strong style={{ color: C.accent2 }}>
+                      {Math.round(([1,2,3,4].reduce((acc, i) => acc + parseInt(g("r"+i+"_p",0))*30 + parseInt(g("r"+i+"_o",0)), 0) / parseInt(g("effectifDebut", 0))) * 100)}%
+                    </strong>
+                  </div>
+                )}
+              </div>
+              <Row2>
+                <Stepper label="Oeufs coquille molle" value={g("oeufsM", 0)} onChange={v => set("oeufsM", v)} />
+                <Stepper label="Oeufs casses" value={g("oeufsCasses", 0)} onChange={v => set("oeufsCasses", v)} />
+              </Row2>
+            </Card>
+          )}
+
+          {/* ── PRODUCTION POULET CHAIR ── */}
+          {activeModule.id === "poulet" && (
+            <Card accent={C.warn}>
+              <CardTitle icon="🍗" num="D">Suivi Poulet de Chair</CardTitle>
+              <Row2>
+                <Stepper label="Poids moyen lot" unit="kg" value={g("poidsMoyen", 0)} onChange={v => set("poidsMoyen", v)} step={0.1} />
+                <Select label="Stade" value={g("stadePoulet")} onChange={e => set("stadePoulet", e.target.value)}>
+                  <option value="">-- Stade --</option>
+                  <option>Demarrage (J1-J14)</option>
+                  <option>Croissance (J15-J28)</option>
+                  <option>Finition (J29-abattage)</option>
+                  <option>Abattage</option>
+                </Select>
+              </Row2>
+              <Stepper label="Nb poulets abattus/vendus" value={g("pouletAbattus", 0)} onChange={v => set("pouletAbattus", v)} />
+              <Stepper label="Poids total vendu" unit="kg" value={g("poidsVendu", 0)} onChange={v => set("poidsVendu", v)} step={5} />
+            </Card>
+          )}
+
+          {/* ── AMBIANCE (Animal) ── */}
+          {isAnimal && (
+            <Card>
+              <CardTitle icon="🌡️" num="E">Ambiance Batiment</CardTitle>
+              <Row2>
+                <Input label="Temp. Min (°C)" type="number" step="0.1" value={g("tempMin")} onChange={e => set("tempMin", e.target.value)} placeholder="25.0" />
+                <Input label="Temp. Max (°C)" type="number" step="0.1" value={g("tempMax")} onChange={e => set("tempMax", e.target.value)} placeholder="31.0" />
+              </Row2>
+              <Row2>
+                <Input label="Humidite Min (%)" type="number" value={g("humMin")} onChange={e => set("humMin", e.target.value)} placeholder="60" />
+                <Input label="Humidite Max (%)" type="number" value={g("humMax")} onChange={e => set("humMax", e.target.value)} placeholder="90" />
+              </Row2>
+            </Card>
+          )}
+
+          {/* ── ANALYSE FIENTES (Animal) ── */}
+          {isAnimal && (
+            <Card>
+              <CardTitle icon="💩" num="F">Fientes et Sante</CardTitle>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: .5 }}>Aspect des fientes</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {["Normal","Liquides","Verdatres","Jaunatres","Noires/hemorragiques","Blanchatres","Mousseuses"].map(a => {
+                    const sel = (g("aspectsFientes", []) || []).includes(a);
+                    return (
+                      <div key={a} onClick={() => { const cur = g("aspectsFientes", []) || []; set("aspectsFientes", sel ? cur.filter(x => x !== a) : [...cur, a]); }}
+                        style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${sel ? C.warn : C.border}`, background: sel ? C.warn + "15" : C.surface, color: sel ? C.warn : C.text, fontSize: 13, cursor: "pointer", userSelect: "none" }}>
+                        {a}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <Stepper label="Proportion fientes anormales" unit="%" value={g("pctFientesAnorm", 0)} onChange={v => set("pctFientesAnorm", Math.min(100, v))} step={5} />
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: .5 }}>Odeur</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[{ v: "normale", icon: "😐" }, { v: "forte", icon: "😷" }, { v: "aigre", icon: "🤢" }].map(o => (
+                    <div key={o.v} onClick={() => set("odeurFientes", o.v)}
+                      style={{ flex: 1, textAlign: "center", padding: "10px 4px", borderRadius: 10, border: `1px solid ${g("odeurFientes") === o.v ? C.accent : C.border}`, background: g("odeurFientes") === o.v ? C.accent + "15" : C.surface, cursor: "pointer", userSelect: "none" }}>
+                      <div style={{ fontSize: 20, marginBottom: 4 }}>{o.icon}</div>
+                      <div style={{ fontSize: 12, color: g("odeurFientes") === o.v ? C.accent : C.muted }}>{o.v}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: .5 }}>Photos fientes <span style={{ color: C.accent, fontStyle: "normal" }}>(recommande)</span></div>
+                <div onClick={() => fileRef.current?.click()} style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: "18px 14px", textAlign: "center", cursor: "pointer" }}>
+                  <input ref={fileRef} type="file" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={handlePhotos} />
+                  <div style={{ fontSize: 26, marginBottom: 6 }}>📷</div>
+                  <div style={{ fontSize: 13, color: C.muted }}>Appuyer pour <span style={{ color: C.accent }}>photographier</span></div>
+                </div>
+                {photos.length > 0 && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 10 }}>
+                    {photos.map((p, i) => (
+                      <div key={i} style={{ position: "relative", borderRadius: 8, overflow: "hidden", aspectRatio: "1", background: C.border }}>
+                        <img src={p.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <button onClick={() => setPhotos(prev => prev.filter((_, idx) => idx !== i))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,.7)", border: "none", color: "white", width: 22, height: 22, borderRadius: "50%", cursor: "pointer", fontSize: 12 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* ── PRODUCTION VEGETALE ── */}
+          {isVeg && (
+            <>
+              <Card accent={activeModule.id === "mais" ? C.accent : C.info}>
+                <CardTitle icon={activeModule.icon} num="B">Parcelle et Campagne</CardTitle>
+                <Row2>
+                  <Input label="Nom parcelle / champ" type="text" value={g("nomParcelle")} onChange={e => set("nomParcelle", e.target.value)} placeholder="Ex: Champ Nord..." />
+                  <Select label="Campagne" value={g("campagne")} onChange={e => set("campagne", e.target.value)}>
+                    <option value="">-- Saison --</option>
+                    <option>Grande saison 2026</option>
+                    <option>Petite saison 2026</option>
+                    <option>Saison seche 2026</option>
+                  </Select>
+                </Row2>
+                <Row2>
+                  <Stepper label="Superficie" unit="ha" value={g("superficie", 0)} step={0.5} onChange={v => set("superficie", v)} />
+                  <Select label="Phase actuelle" value={g("phaseVeg")} onChange={e => set("phaseVeg", e.target.value)}>
+                    <option value="">-- Phase --</option>
+                    {PHASES_VEG.map(p => <option key={p}>{p}</option>)}
+                  </Select>
+                </Row2>
+                <Input label="Variete / Semence" type="text" value={g("variete")} onChange={e => set("variete", e.target.value)} placeholder="Ex: EVDT97, TGX 1448, Locale..." />
+                <Input label="Pluviometrie observee" type="text" value={g("pluviometrie")} onChange={e => set("pluviometrie", e.target.value)} placeholder="Ex: Bonne pluie, Sec, 25mm..." />
+              </Card>
+
+              <Card>
+                <CardTitle icon="🌱" num="C">Intrants Utilises Aujourd hui</CardTitle>
+                <Row2>
+                  <Stepper label="Semences" unit="kg" value={g("semencesKg", 0)} onChange={v => set("semencesKg", v)} step={5} />
+                  <Input label="Cout semences (FCFA)" type="number" value={g("coutSemences")} onChange={e => set("coutSemences", e.target.value)} placeholder="0" />
+                </Row2>
+                <Row2>
+                  <Stepper label="Engrais" unit="kg" value={g("engraisKg", 0)} onChange={v => set("engraisKg", v)} step={5} />
+                  <Input label="Cout engrais (FCFA)" type="number" value={g("coutEngrais")} onChange={e => set("coutEngrais", e.target.value)} placeholder="0" />
+                </Row2>
+                <Input label="Type engrais" type="text" value={g("typeEngrais")} onChange={e => set("typeEngrais", e.target.value)} placeholder="Ex: NPK, Uree, Compost..." />
+                <Row2>
+                  <Input label="Pesticide / Herbicide" type="text" value={g("pesticidesQte")} onChange={e => set("pesticidesQte", e.target.value)} placeholder="Qte + type" />
+                  <Input label="Cout pesticides (FCFA)" type="number" value={g("coutPesticides")} onChange={e => set("coutPesticides", e.target.value)} placeholder="0" />
+                </Row2>
+                <Row2>
+                  <Stepper label="Main d oeuvre" unit="pers." value={g("mainOeuvrePers", 0)} onChange={v => set("mainOeuvrePers", v)} />
+                  <Input label="Cout MO (FCFA)" type="number" value={g("coutMOVeg")} onChange={e => set("coutMOVeg", e.target.value)} placeholder="0" />
+                </Row2>
+                <Input label="Problemes observes" type="text" value={g("problemesVeg")} onChange={e => set("problemesVeg", e.target.value)} placeholder="Maladies, ravageurs, stress hydrique..." />
+              </Card>
+
+              <Card accent={C.accent}>
+                <CardTitle icon="🌾" num="D">Production et Ventes</CardTitle>
+                <Row2>
+                  <Stepper label="Quantite recoltee" value={g("recolteQte", 0)} onChange={v => set("recolteQte", v)} step={10} />
+                  <Select label="Unite" value={g("uniteRecolte", "kg")} onChange={e => set("uniteRecolte", e.target.value)}>
+                    {UNITES_POIDS.map(u => <option key={u}>{u}</option>)}
+                  </Select>
+                </Row2>
+                <Stepper label="Quantite mise en stock" value={g("stockageQte", 0)} onChange={v => set("stockageQte", v)} step={10} />
+                <Row2>
+                  <Stepper label="Quantite vendue" value={g("qteVendueVeg", 0)} onChange={v => set("qteVendueVeg", v)} step={10} />
+                  <Input label="Prix vente / unite (FCFA)" type="number" value={g("prixVenteVeg")} onChange={e => set("prixVenteVeg", e.target.value)} placeholder="0" />
+                </Row2>
+                {g("qteVendueVeg", 0) > 0 && g("prixVenteVeg", 0) > 0 && (
+                  <div style={{ background: C.accent + "15", border: `1px solid ${C.accent}44`, borderRadius: 10, padding: 12, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: C.muted }}>Recette estimee</div>
+                    <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 22, color: C.accent }}>{(parseInt(g("qteVendueVeg",0)) * parseInt(g("prixVenteVeg",0))).toLocaleString()} FCFA</div>
+                  </div>
+                )}
+              </Card>
+            </>
+          )}
+
+          {/* ── VENTES (Animal) ── */}
+          {isAnimal && (
+            <Card accent={C.accent}>
+              <CardTitle icon="💰" num="G">Ventes du Jour</CardTitle>
+
+              {activeModule.id === "oeufs" && (() => {
+                const mntPlateaux = (parseInt(g("plateauxVendus",0))) * (parseInt(g("prixPlateau",0)||0));
+                const mntUnite = (parseInt(g("oeufsVendusUnite",0))) * (parseInt(g("prixOeuf",0)||0));
+                return (
+                  <>
+                    {/* LIGNE 1 : Plateaux */}
+                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, color: C.accent2, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5, marginBottom: 10 }}>Vente en plateaux</div>
+                      <Stepper label="Nombre de plateaux vendus" value={g("plateauxVendus", 0)} onChange={v => set("plateauxVendus", v)} />
+                      <Input label="Prix de vente / plateau (FCFA)" type="number" value={g("prixPlateau")} onChange={e => set("prixPlateau", e.target.value)} placeholder="Ex: 1500" />
+                      {mntPlateaux > 0 && (
+                        <div style={{ background: C.accent2 + "18", border: `1px solid ${C.accent2}44`, borderRadius: 8, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontSize: 12, color: C.muted }}>Montant plateaux</div>
+                          <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 18, color: C.accent2 }}>{mntPlateaux.toLocaleString()} FCFA</div>
+                        </div>
+                      )}
+                    </div>
+                    {/* LIGNE 2 : Oeufs a l unite */}
+                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, color: C.accent2, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5, marginBottom: 10 }}>Vente a l unite</div>
+                      <Stepper label="Nombre d oeufs vendus" value={g("oeufsVendusUnite", 0)} onChange={v => set("oeufsVendusUnite", v)} step={10} />
+                      <Input label="Prix de vente / oeuf (FCFA)" type="number" value={g("prixOeuf")} onChange={e => set("prixOeuf", e.target.value)} placeholder="Ex: 75" />
+                      {mntUnite > 0 && (
+                        <div style={{ background: C.accent2 + "18", border: `1px solid ${C.accent2}44`, borderRadius: 8, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontSize: 12, color: C.muted }}>Montant oeufs unite</div>
+                          <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 18, color: C.accent2 }}>{mntUnite.toLocaleString()} FCFA</div>
+                        </div>
+                      )}
+                    </div>
+                    {/* TOTAL */}
+                    {(mntPlateaux + mntUnite) > 0 && (
+                      <div style={{ background: C.accent + "18", border: `1px solid ${C.accent}55`, borderRadius: 10, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.muted }}>TOTAL RECETTES OEUFS</div>
+                          {mntPlateaux > 0 && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{g("plateauxVendus",0)} plat. + {g("oeufsVendusUnite",0)} unites</div>}
+                        </div>
+                        <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 22, color: C.accent }}>{(mntPlateaux + mntUnite).toLocaleString()} FCFA</div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              {activeModule.id === "poulet" && (() => {
+                const mntKg = (parseInt(g("pouletKgVendu",0))) * (parseInt(g("prixKgPoulet",0)||0));
+                const mntEntier = (parseInt(g("pouletEntierNb",0))) * (parseInt(g("prixPouletEntier",0)||0));
+                return (
+                  <>
+                    {/* LIGNE 1 : Au kg */}
+                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, color: C.warn, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5, marginBottom: 10 }}>Vente au kg</div>
+                      <Stepper label="Kg de viande vendus" unit="kg" value={g("pouletKgVendu", 0)} onChange={v => set("pouletKgVendu", v)} step={5} />
+                      <Input label="Prix de vente / kg (FCFA)" type="number" value={g("prixKgPoulet")} onChange={e => set("prixKgPoulet", e.target.value)} placeholder="Ex: 2200" />
+                      {mntKg > 0 && (
+                        <div style={{ background: C.warn + "18", border: `1px solid ${C.warn}44`, borderRadius: 8, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontSize: 12, color: C.muted }}>Montant vente kg</div>
+                          <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 18, color: C.warn }}>{mntKg.toLocaleString()} FCFA</div>
+                        </div>
+                      )}
+                    </div>
+                    {/* LIGNE 2 : Entier */}
+                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, color: C.warn, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5, marginBottom: 10 }}>Vente poulet entier</div>
+                      <Stepper label="Nb poulets entiers vendus" value={g("pouletEntierNb", 0)} onChange={v => set("pouletEntierNb", v)} />
+                      <Input label="Prix de vente / poulet (FCFA)" type="number" value={g("prixPouletEntier")} onChange={e => set("prixPouletEntier", e.target.value)} placeholder="Ex: 3500" />
+                      {mntEntier > 0 && (
+                        <div style={{ background: C.warn + "18", border: `1px solid ${C.warn}44`, borderRadius: 8, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontSize: 12, color: C.muted }}>Montant poulets entiers</div>
+                          <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 18, color: C.warn }}>{mntEntier.toLocaleString()} FCFA</div>
+                        </div>
+                      )}
+                    </div>
+                    {/* TOTAL */}
+                    {(mntKg + mntEntier) > 0 && (
+                      <div style={{ background: C.accent + "18", border: `1px solid ${C.accent}55`, borderRadius: 10, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.muted }}>TOTAL RECETTES POULET</div>
+                          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{g("pouletKgVendu",0)} kg + {g("pouletEntierNb",0)} entiers</div>
+                        </div>
+                        <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 22, color: C.accent }}>{(mntKg + mntEntier).toLocaleString()} FCFA</div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </Card>
+          )}
+
+          {/* ── CHARGES (Animal) ── */}
+          {isAnimal && (
+            <Card accent={C.danger}>
+              <CardTitle icon="📉" num="H">Charges du Jour</CardTitle>
+              <Row2>
+                <Input label="Achat aliment (FCFA)" type="number" value={g("coutAliment")} onChange={e => set("coutAliment", e.target.value)} placeholder="0" />
+                <Input label="Achat veto (FCFA)" type="number" value={g("coutVeto")} onChange={e => set("coutVeto", e.target.value)} placeholder="0" />
+              </Row2>
+              <Row2>
+                <Input label="Achat poussins (FCFA)" type="number" value={g("coutPoussins")} onChange={e => set("coutPoussins", e.target.value)} placeholder="0" />
+                <Input label="Main d oeuvre (FCFA)" type="number" value={g("coutMO")} onChange={e => set("coutMO", e.target.value)} placeholder="0" />
+              </Row2>
+              <Input label="Autres charges (FCFA)" type="number" value={g("autresCharges")} onChange={e => set("autresCharges", e.target.value)} placeholder="0" />
+              {/* Marge */}
+              {(() => {
+                const charges = (parseInt(g("coutAliment",0)||0))+(parseInt(g("coutVeto",0)||0))+(parseInt(g("coutPoussins",0)||0))+(parseInt(g("coutMO",0)||0))+(parseInt(g("autresCharges",0)||0));
+                const recettes = activeModule.id === "oeufs"
+                  ? (parseInt(g("plateauxVendus",0))*(parseInt(g("prixPlateau",0)||0))) + (parseInt(g("oeufsVendusUnite",0))*(parseInt(g("prixOeuf",0)||0)))
+                  : (parseInt(g("pouletKgVendu",0))*(parseInt(g("prixKgPoulet",0)||0))) + (parseInt(g("pouletEntierNb",0))*(parseInt(g("prixPouletEntier",0)||0)));
+                const marge = recettes - charges;
+                return (charges > 0 || recettes > 0) ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
+                    {[
+                      { label: "Charges", val: charges, color: C.danger },
+                      { label: "Recettes", val: recettes, color: C.accent },
+                      { label: "Marge", val: marge, color: marge >= 0 ? C.accent : C.danger },
+                    ].map(item => (
+                      <div key={item.label} style={{ background: C.surface, borderRadius: 10, padding: "10px 6px", textAlign: "center" }}>
+                        <div style={{ fontSize: 10, color: C.muted }}>{item.label}</div>
+                        <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 14, color: item.color }}>{item.val >= 0 && item.label === "Marge" && item.val > 0 ? "+" : ""}{item.val.toLocaleString()}</div>
+                        <div style={{ fontSize: 9, color: C.muted }}>FCFA</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+            </Card>
+          )}
+
+          {/* ── STOCK VETO ── */}
+          {isAnimal && (
+            <Card>
+              <CardTitle icon="💊" num="I">Stock Veterinaire</CardTitle>
+              <Textarea label="Stock disponible" rows={3} value={g("stockVeto")} onChange={e => set("stockVeto", e.target.value)} placeholder="Ex: Electro Power x3 sachets, Vitamines C x2 flacons, Tétracycline x1 boite..." />
+              <Textarea label="Produits epuises / a commander" rows={2} value={g("produitsCommander")} onChange={e => set("produitsCommander", e.target.value)} placeholder="Ex: Vaccin Newcastle epuise, Ampicilline a commander..." />
+            </Card>
+          )}
+
+          {/* ── OBSERVATIONS ── */}
+          <Card>
+            <CardTitle icon="📝" num={isAnimal ? "J" : "E"}>Observations Generales</CardTitle>
+            <Textarea label="Observations du jour" rows={3} value={g("observations")} onChange={e => set("observations", e.target.value)} placeholder="Remarques particulieres, evenements inhabituels..." />
+          </Card>
+
+          {/* ── ANALYSE IA ── */}
+          {analyzing && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 14, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, marginBottom: 14, fontSize: 14, color: C.muted }}>
+              <div style={{ width: 20, height: 20, border: `2px solid ${C.border}`, borderTopColor: C.accent, borderRadius: "50%", animation: "spin .8s linear infinite", flexShrink: 0 }} />
+              Analyse IA en cours...
+            </div>
+          )}
+          {aiResult && (
+            <Card accent={aiResult.alerte === "URGENT" ? C.danger : aiResult.alerte === "VIGILANCE" ? C.warn : C.accent}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ fontSize: 24 }}>{aiResult.alerte === "URGENT" ? "🚨" : aiResult.alerte === "VIGILANCE" ? "⚠️" : "✅"}</div>
+                <div>
+                  <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 15, color: aiResult.alerte === "URGENT" ? C.danger : aiResult.alerte === "VIGILANCE" ? C.warn : C.accent }}>
+                    {aiResult.alerte === "URGENT" ? "Action urgente" : aiResult.alerte === "VIGILANCE" ? "Vigilance" : "Situation normale"}
+                  </div>
+                  <div style={{ fontSize: 12, color: C.muted }}>{aiResult.cause}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}><strong style={{ color: C.accent2 }}>Diagnostic:</strong> {aiResult.diagnostic}</div>
+              {aiResult.actions?.map((a, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 11px", background: "rgba(255,255,255,.04)", borderRadius: 10, marginBottom: 6, fontSize: 13 }}>
+                  <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, textTransform: "uppercase", background: (a.prio==="ROUGE" ? C.danger : a.prio==="ORANGE" ? C.warn : C.accent)+"22", color: a.prio==="ROUGE" ? C.danger : a.prio==="ORANGE" ? C.warn : C.accent }}>{a.prio}</span>
+                  {a.texte}
+                </div>
+              ))}
+            </Card>
+          )}
+          <Btn onClick={runAI} disabled={analyzing} color={C.info} style={{ marginBottom: 14 }}>
+            🤖 {analyzing ? "Analyse..." : "Analyser avec l IA"}
+          </Btn>
+          <Btn onClick={submitForm} style={{ marginBottom: 20 }}>✅ Enregistrer la collecte</Btn>
+        </div>
+
+        {/* NAV BOTTOM */}
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.surface, borderTop: `1px solid ${C.border}`, padding: "10px 16px", display: "flex", gap: 10, zIndex: 100 }}>
+          <button onClick={() => setScreen("home")} style={{ background: C.card, border: `1px solid ${C.border}`, color: C.muted, borderRadius: 12, padding: "12px 16px", cursor: "pointer", fontSize: 13, fontFamily: "Space Grotesk", fontWeight: 600 }}>← Accueil</button>
+          <Btn onClick={submitForm} style={{ flex: 1, padding: "12px 0" }}>✅ Enregistrer</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── HOME SCREEN ─────────────────────────────────────────
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 30 }}>
+      <style>{GS}</style>
+
+      {/* HERO */}
+      <div style={{ background: `linear-gradient(160deg, ${C.surface} 0%, ${C.bg} 100%)`, borderBottom: `1px solid ${C.border}`, padding: "28px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+          <div style={{ width: 52, height: 52, background: C.accent, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>🌿</div>
+          <div>
+            <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 24, letterSpacing: -0.5 }}>ADIL <span style={{ color: C.accent }}>FARMS</span></div>
+            <div style={{ fontSize: 12, color: C.muted }}>Plateforme de gestion agricole</div>
+          </div>
+        </div>
+        {/* STATS RAPIDES */}
+        {records.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            {[
+              { icon: "📋", val: records.length, label: "Collectes" },
+              { icon: "💰", val: (() => { const tot = records.reduce((acc, r) => { return acc + (parseInt(r.plateauxVendus||0)*parseInt(r.prixPlateau||0)) + (parseInt(r.oeufsVendusUnite||0)*parseInt(r.prixOeuf||0)) + (parseInt(r.pouletKgVendu||0)*parseInt(r.prixKgPoulet||0)) + (parseInt(r.pouletEntierNb||0)*parseInt(r.prixPouletEntier||0)) + (parseInt(r.qteVendueVeg||0)*parseInt(r.prixVenteVeg||0)); }, 0); return tot > 999999 ? (tot/1000000).toFixed(1)+"M" : tot > 999 ? (tot/1000).toFixed(0)+"K" : tot; })(), label: "FCFA Recettes", color: C.accent },
+              { icon: "📅", val: (() => { const d = new Date(Math.max(...records.map(r => new Date(r.date)))); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }); })(), label: "Derniere" },
+            ].map(s => (
+              <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
+                <div style={{ fontSize: 18, marginBottom: 4 }}>{s.icon}</div>
+                <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 16, color: s.color || C.text }}>{s.val}</div>
+                <div style={{ fontSize: 10, color: C.muted }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: "20px 16px 0" }}>
+        <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Nouvelle collecte</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
+          {MODULES.map(mod => (
+            <div key={mod.id} onClick={() => startForm(mod)}
+              style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "20px 16px", cursor: "pointer", transition: "transform .15s", animation: "fadeUp .3s ease both" }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>{mod.icon}</div>
+              <div style={{ fontFamily: "Outfit", fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{mod.label}</div>
+              <div style={{ fontSize: 12, color: C.muted }}>{mod.desc}</div>
+              <div style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 5, background: mod.color + "22", border: `1px solid ${mod.color}55`, borderRadius: 6, padding: "4px 10px", fontSize: 11, color: mod.color, fontWeight: 700 }}>
+                Saisir →
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ fontSize: 12, color: C.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Historique et rapports</div>
+        <div onClick={() => setScreen("history")}
+          style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 44, height: 44, background: C.info + "22", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>📊</div>
+          <div>
+            <div style={{ fontFamily: "Outfit", fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Historique complet</div>
+            <div style={{ fontSize: 12, color: C.muted }}>{records.length} fiches · Export CSV disponible</div>
+          </div>
+          <div style={{ marginLeft: "auto", color: C.muted, fontSize: 18 }}>›</div>
+        </div>
+        <div onClick={exportCSV}
+          style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 44, height: 44, background: C.accent + "22", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>📥</div>
+          <div>
+            <div style={{ fontFamily: "Outfit", fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Exporter en Excel / CSV</div>
+            <div style={{ fontSize: 12, color: C.muted }}>Historique financier certifiable</div>
+          </div>
+          <div style={{ marginLeft: "auto", color: C.muted, fontSize: 18 }}>›</div>
+        </div>
+
+        <div style={{ marginTop: 28, padding: "14px 16px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 14 }}>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5 }}>Legende modules</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {MODULES.map(m => <Tag key={m.id} color={m.color}>{m.icon} {m.label}</Tag>)}
+          </div>
+        </div>
+      </div>
+
+      {toast && (
+        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: toast.err ? C.danger : C.accent, color: toast.err ? "white" : C.bg, padding: "11px 22px", borderRadius: 30, fontWeight: 700, fontSize: 14, zIndex: 999, whiteSpace: "nowrap", animation: "fadeUp .3s ease" }}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = createRoot(document.getElementById('root'));
+root.render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
+</script>
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: sans-serif;
+  margin: 20px;
+  padding: 0;
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 22px;
+}
+
+h2 {
+  margin-top: 0;
+  font-size: 20px;
+}
+
+h3 {
+  margin-top: 0;
+  font-size: 18px;
+}
+
+h4 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+h5 {
+  margin-top: 0;
+  font-size: 14px;
+}
+
+h6 {
+  margin-top: 0;
+  font-size: 12px;
+}
+
+code {
+  font-size: 1.2em;
+}
+
+ul {
+  padding-inline-start: 20px;
+}
+
+
+</style>
+</html>
